@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pembuat Faktur Penjualan Rapi</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Pustaka untuk konversi HTML ke Gambar (PNG/JPG) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Pustaka untuk konversi Gambar ke PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Menggunakan font Inter secara default */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        
+        /* Style untuk elemen input di dalam faktur EDITING */
+        .input-item {
+            border: 1px solid #e5e7eb;
+            outline: none;
+            padding: 8px 12px;
+            width: 100%;
+            background-color: #f9fafb;
+            transition: all 0.15s;
+        }
+        .input-item:focus {
+            background-color: white;
+            box-shadow: 0 0 0 2px #3b82f6;
+        }
+
+        /* Menyembunyikan kontainer untuk download, ditempatkan di luar pandangan */
+        #downloadContainer {
+            position: absolute;
+            left: -9999px; /* Jauh di luar viewport */
+            top: 0;
+            width: 794px; /* Lebar A4 (sekitar 210mm pada 96 DPI) */
+            background-color: white;
+            padding: 50px; /* Padding tepi A4 */
+            box-shadow: none; /* Hilangkan bayangan saat ditangkap */
+        }
+        
+        /* Styling khusus untuk elemen di dalam kontainer download */
+        #downloadContainer .clean-table th, 
+        #downloadContainer .clean-table td {
+            border-color: #e5e7eb !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Kontainer Utama (EDITING VIEW) -->
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="mb-6 no-print">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">Pembuat Faktur Penjualan</h1>
+            
+            <!-- Panel Aksi dan Pilihan Faktur -->
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-white shadow-lg rounded-lg border border-gray-100">
+                <div class="flex items-center space-x-3 mb-4 md:mb-0">
+                    <label for="invoiceSelector" class="font-medium text-gray-700 whitespace-nowrap">Faktur Tersimpan:</label>
+                    <select id="invoiceSelector" class="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white">
+                        <option value="new">-- Faktur Baru --</option>
+                        <!-- Opsi faktur akan diisi oleh JS -->
+                    </select>
+                </div>
+                
+                <div class="space-y-2 md:space-y-0 md:space-x-4 flex flex-wrap">
+                    <button onclick="newInvoice()" class="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition">
+                        <i data-lucide="file-plus" class="w-4 h-4 mr-2"></i> Faktur Baru
+                    </button>
+                    <button id="saveButton" onclick="saveInvoice()" class="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">
+                        <i data-lucide="save" class="w-4 h-4 mr-2"></i> Simpan Faktur
+                    </button>
+                    
+                    <!-- TOMBOL CETAK DIPINDAHKAN KE SINI -->
+                    <button onclick="window.print()" class="flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
+                        <i data-lucide="printer" class="w-4 h-4 mr-2"></i> Cetak Browser
+                    </button>
+
+                    <!-- Tombol Download Rapi -->
+                    <button onclick="downloadInvoice('pdf')" class="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition">
+                        <i data-lucide="file-text" class="w-4 h-4 mr-2"></i> Unduh PDF (Rapi)
+                    </button>
+                    <button onclick="downloadInvoice('png')" class="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition">
+                        <i data-lucide="image" class="w-4 h-4 mr-2"></i> Unduh PNG (Rapi)
+                    </button>
+                    
+                </div>
+            </div>
+            <p id="authStatus" class="mt-2 text-sm text-gray-500">Memuat otentikasi...</p>
+        </header>
+        
+        <!-- Kontainer Faktur EDITING (Penuh dengan input fields) -->
+        <div id="invoiceContainer" class="invoice-container bg-white p-6 sm:p-10 rounded-xl shadow-2xl border border-gray-200">
+            
+            <!-- Header Faktur Perusahaan Anda (EDITING) -->
+            <div class="flex justify-between border-b pb-4 mb-8">
+                <div class="w-full md:w-3/5 pr-4"> 
+                    <h2 class="text-3xl font-extrabold text-blue-700 mb-2">FAKTUR PENJUALAN</h2>
+                    <input type="text" id="companyName" value="PT. Solusi Digital Abadi" class="font-medium text-lg input-item px-0 py-0 mb-1" placeholder="Nama Perusahaan Anda">
+                    <textarea id="companyAddress" class="text-sm input-item px-0 py-0 h-10 resize-none" placeholder="Alamat Perusahaan">Jl. Teknologi No. 123, Jakarta, Indonesia</textarea>
+                    
+                    <div class="mt-4 flex items-center space-x-2 no-print">
+                        <label for="statusSelector" class="text-xs font-semibold text-gray-500 uppercase">Status Faktur:</label>
+                        <select id="statusSelector" onchange="updateStatusBadge(this.value)" class="text-sm border rounded-lg py-1 px-2 bg-white">
+                            <option value="Belum Lunas">Belum Lunas</option>
+                            <option value="Jatuh Tempo">Jatuh Tempo</option>
+                            <option value="Lunas">Lunas</option>
+                            <option value="Dibatalkan">Dibatalkan</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="text-right flex flex-col items-end">
+                    <span id="invoiceStatusBadge" class="mb-4 inline-block px-4 py-1 text-sm font-bold uppercase rounded-full bg-yellow-100 text-yellow-800 shadow-md">BELUM LUNAS</span>
+                    <p class="text-sm text-gray-600">No. Faktur:</p>
+                    <input type="text" id="invoiceNumber" value="INV-0001" class="font-bold text-xl text-gray-800 text-right input-item w-32 mt-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md" placeholder="INV-XXX">
+                </div>
+            </div>
+            
+            <!-- Detail Pelanggan dan Tanggal (EDITING) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div class="border p-4 rounded-lg bg-gray-50">
+                    <h3 class="font-semibold text-gray-700 mb-2">Ditagihkan Kepada:</h3>
+                    <input type="text" id="customerName" class="text-lg font-medium input-item px-0 mb-1" placeholder="Nama Pelanggan / Perusahaan" value="Pelanggan Utama">
+                    <textarea id="customerAddress" class="text-sm input-item px-0 h-16 resize-none" placeholder="Alamat Pelanggan">Jl. Contoh No. 45, Bandung</textarea>
+                </div>
+                
+                <div class="flex flex-col space-y-3">
+                    <div class="flex justify-between items-center">
+                        <label for="invoiceDate" class="text-gray-600 font-medium">Tanggal Faktur:</label>
+                        <input type="date" id="invoiceDate" class="input-item w-40 text-sm py-1" value="">
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <label for="dueDate" class="text-gray-600 font-medium">Jatuh Tempo:</label>
+                        <input type="date" id="dueDate" class="input-item w-40 text-sm py-1" value="">
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <label for="taxRate" class="text-gray-600 font-medium">Pajak (PPN %):</label>
+                        <input type="number" id="taxRate" value="11" min="0" max="100" class="input-item w-20 text-sm py-1 text-right" oninput="calculateTotals()">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tabel Item (EDITING) -->
+            <div class="overflow-x-auto mb-6 border-b border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr class="bg-blue-50">
+                            <th class="py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider pl-4 w-1/12">No</th>
+                            <th class="py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-5/12">Deskripsi Barang/Jasa</th>
+                            <th class="py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/12">Qty</th>
+                            <th class="py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-2/12">Harga Satuan</th>
+                            <th class="py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider pr-4 w-2/12">Total</th>
+                            <th class="py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-1/12 no-print">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoiceItems" class="bg-white divide-y divide-gray-100">
+                        <!-- Baris item akan dimasukkan di sini oleh JS -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Tombol Tambah Item -->
+            <button onclick="addItem()" class="no-print flex items-center px-3 py-2 text-sm font-medium rounded-lg text-blue-600 border border-blue-200 hover:bg-blue-50 transition mb-8">
+                <i data-lucide="plus" class="w-4 h-4 mr-2"></i> Tambah Baris Item
+            </button>
+            
+            <!-- Total dan Keterangan (EDITING) -->
+            <div class="flex flex-col md:flex-row justify-between">
+                
+                <!-- Keterangan -->
+                <div class="w-full md:w-1/2 mb-6 md:mb-0">
+                    <h3 class="font-semibold text-gray-700 mb-2">Catatan/Keterangan:</h3>
+                    <textarea id="notes" class="w-full input-item h-24 border border-gray-200 rounded-lg p-2" placeholder="Contoh: Pembayaran ditunggu dalam 30 hari."></textarea>
+                </div>
+                
+                <!-- Summary Total -->
+                <div class="w-full md:w-5/12 space-y-2">
+                    <div class="flex justify-between text-gray-600">
+                        <span>Subtotal:</span>
+                        <span id="subtotalDisplay" class="font-medium">Rp 0,00</span>
+                    </div>
+                    <div class="flex justify-between text-gray-600">
+                        <span>Pajak (<span id="taxRateDisplay">11</span>%):</span>
+                        <span id="taxAmountDisplay" class="font-medium">Rp 0,00</span>
+                    </div>
+                    <div class="flex justify-between pt-3 border-t-2 border-blue-500">
+                        <span class="text-xl font-bold text-gray-800">TOTAL KESELURUHAN:</span>
+                        <span id="grandTotalDisplay" class="text-xl font-bold text-blue-700">Rp 0,00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Area Pesan (Untuk notifikasi berhasil/gagal) -->
+        <div id="messageArea" class="mt-6"></div>
+        
+    </div>
+    
+    <!-- KONTRAINER TERSEMBUNYI UNTUK RENDERING DOWNLOAD YANG BERSIH/RAPI -->
+    <div id="downloadContainer" class="shadow-none">
+        <!-- Konten Faktur Bersih akan dirender di sini oleh JavaScript -->
+    </div>
+    <!-- END KONTRAINER TERSEMBUNYI -->
+
+    <!-- Firebase SDK Imports dan Logika Faktur -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variabel global yang disediakan oleh lingkungan Canvas
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let currentInvoiceId = null;
+        let savedInvoices = [];
+
+        // Inisialisasi Firebase
+        function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Otentikasi
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('authStatus').textContent = `Otentikasi Berhasil. User ID: ${userId}`;
+                        setupInvoiceListener();
+                    } else {
+                        // Coba sign-in menggunakan token kustom atau anonim
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Kesalahan saat inisialisasi Firebase:", error);
+                document.getElementById('authStatus').textContent = `Kesalahan Otentikasi. Cek konsol.`;
+            }
+        }
+
+        // --- Helper Functions ---
+
+        /**
+         * Menampilkan pesan notifikasi di UI.
+         */
+        function displayMessage(message, type = 'info') {
+            const area = document.getElementById('messageArea');
+            let color = 'bg-blue-100 border-blue-400 text-blue-700';
+            if (type === 'success') color = 'bg-green-100 border-green-400 text-green-700';
+            if (type === 'error') color = 'bg-red-100 border-red-400 text-red-700';
+
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `p-4 border-l-4 ${color} rounded-lg shadow-md mb-4`;
+            alertDiv.innerHTML = `<p class="font-bold">${type.toUpperCase()}:</p><p class="text-sm">${message}</p>`;
+            area.appendChild(alertDiv);
+
+            setTimeout(() => {
+                area.removeChild(alertDiv);
+            }, 5000);
+        }
+
+        /**
+         * Memformat angka menjadi format mata uang Rupiah.
+         */
+        function formatRupiah(amount) {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 2
+            }).format(amount);
+        }
+        
+        /**
+         * Memperbarui tampilan badge status faktur.
+         */
+        window.updateStatusBadge = function(status) {
+            const badge = document.getElementById('invoiceStatusBadge');
+            const selector = document.getElementById('statusSelector');
+            
+            let colorClass = '';
+            let text = status ? status.toUpperCase() : 'BELUM LUNAS';
+            
+            if (selector.value !== status) {
+                 selector.value = status;
+            }
+            
+            switch (status) {
+                case 'Lunas':
+                    colorClass = 'bg-green-100 text-green-800';
+                    break;
+                case 'Dibatalkan':
+                    colorClass = 'bg-red-100 text-red-800';
+                    text = 'DIBATALKAN';
+                    break;
+                case 'Jatuh Tempo':
+                    colorClass = 'bg-orange-100 text-orange-800';
+                    text = 'JATUH TEMPO';
+                    break;
+                case 'Belum Lunas':
+                default:
+                    colorClass = 'bg-yellow-100 text-yellow-800';
+                    text = 'BELUM LUNAS';
+                    break;
+            }
+            
+            badge.className = `mb-4 inline-block px-4 py-1 text-sm font-bold uppercase rounded-full shadow-md ${colorClass}`;
+            badge.textContent = text;
+        };
+
+
+        // --- Core Invoice Logic ---
+
+        /**
+         * Menghitung total untuk setiap baris dan total faktur.
+         */
+        window.calculateTotals = function() {
+            const itemRows = document.querySelectorAll('#invoiceItems tr');
+            let subtotal = 0;
+            const taxRate = (parseFloat(document.getElementById('taxRate').value) / 100) || 0;
+            
+            itemRows.forEach((row, index) => {
+                // Gunakan querySelectorAll untuk memastikan kita mendapatkan input yang benar
+                const qtyInput = row.querySelector(`#item-qty-${index}`);
+                const priceInput = row.querySelector(`#item-price-${index}`);
+
+                if (!qtyInput || !priceInput) return; // Skip if inputs not found (e.g., in clean table)
+
+                const quantity = parseFloat(qtyInput.value) || 0;
+                const price = parseFloat(priceInput.value) || 0;
+                const total = quantity * price;
+
+                // Update total baris di editing view
+                const totalDisplay = row.querySelector(`#item-total-display-${index}`);
+                if (totalDisplay) {
+                     totalDisplay.textContent = formatRupiah(total);
+                }
+               
+                subtotal += total;
+            });
+
+            const taxAmount = subtotal * taxRate;
+            const grandTotal = subtotal + taxAmount;
+
+            // Update tampilan summary (Editing View)
+            document.getElementById('subtotalDisplay').textContent = formatRupiah(subtotal);
+            document.getElementById('taxRateDisplay').textContent = document.getElementById('taxRate').value;
+            document.getElementById('taxAmountDisplay').textContent = formatRupiah(taxAmount);
+            document.getElementById('grandTotalDisplay').textContent = formatRupiah(grandTotal);
+
+            // Simpan nilai total di dataset tombol save untuk data yang akurat
+            document.getElementById('saveButton').dataset.subtotal = subtotal.toFixed(2);
+            document.getElementById('saveButton').dataset.taxamount = taxAmount.toFixed(2);
+            document.getElementById('saveButton').dataset.grandtotal = grandTotal.toFixed(2);
+        };
+
+        /**
+         * Membuat dan menambahkan baris item baru ke tabel EDITING.
+         */
+        window.addItem = function(itemData = { description: '', quantity: 1, price: 0 }) {
+            const tableBody = document.getElementById('invoiceItems');
+            const newRowIndex = tableBody.rows.length;
+            
+            const newRow = document.createElement('tr');
+            newRow.className = 'hover:bg-gray-50';
+            newRow.innerHTML = `
+                <td class="py-2 text-center text-gray-600 border-r border-gray-100">${newRowIndex + 1}</td>
+                <td class="py-1">
+                    <input type="text" id="item-desc-${newRowIndex}" value="${itemData.description}" class="input-item rounded-lg" placeholder="Nama Barang/Jasa">
+                </td>
+                <td class="py-1">
+                    <input type="number" id="item-qty-${newRowIndex}" value="${itemData.quantity}" min="1" class="input-item text-center rounded-lg" oninput="calculateTotals()">
+                </td>
+                <td class="py-1">
+                    <input type="number" id="item-price-${newRowIndex}" value="${itemData.price}" min="0" class="input-item text-right rounded-lg" oninput="calculateTotals()">
+                </td>
+                <td class="py-2 text-right font-medium text-gray-800 pr-4">
+                    <span id="item-total-display-${newRowIndex}">${formatRupiah(itemData.quantity * itemData.price)}</span>
+                </td>
+                <td class="py-1 text-center no-print">
+                    <button onclick="deleteItem(this, '${newRowIndex}')" class="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-100 transition">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </td>
+            `;
+            tableBody.appendChild(newRow);
+            
+            lucide.createIcons();
+            calculateTotals();
+        };
+
+        /**
+         * Menghapus baris item dari tabel EDITING.
+         */
+        window.deleteItem = function(button, id) {
+            const row = button.closest('tr');
+            row.remove();
+            
+            reindexItems();
+            calculateTotals();
+        };
+        
+        /**
+         * Mengurutkan ulang indeks baris dan nomor urut.
+         */
+        function reindexItems() {
+            const tableBody = document.getElementById('invoiceItems');
+            Array.from(tableBody.rows).forEach((row, index) => {
+                row.cells[0].textContent = index + 1;
+                
+                // Update ID input
+                row.cells[1].querySelector('input').id = `item-desc-${index}`;
+                row.cells[2].querySelector('input').id = `item-qty-${index}`;
+                row.cells[3].querySelector('input').id = `item-price-${index}`;
+                row.cells[4].querySelector('span').id = `item-total-display-${index}`;
+                
+                const deleteButton = row.cells[5].querySelector('button');
+                if (deleteButton) {
+                    deleteButton.setAttribute('onclick', `deleteItem(this, '${index}')`);
+                }
+            });
+        }
+
+        /**
+         * Mengambil data faktur dari form.
+         */
+        function getInvoiceDataFromForm() {
+            calculateTotals(); 
+            const items = [];
+            const itemRows = document.querySelectorAll('#invoiceItems tr');
+            
+            itemRows.forEach((row, index) => {
+                const description = row.querySelector(`#item-desc-${index}`).value;
+                const quantity = parseFloat(row.querySelector(`#item-qty-${index}`).value) || 0;
+                const price = parseFloat(row.querySelector(`#item-price-${index}`).value) || 0;
+                const total = quantity * price;
+
+                // Hanya masukkan baris yang ada isinya
+                if (description && (quantity > 0 || price > 0)) {
+                    items.push({
+                        description,
+                        quantity: quantity,
+                        price: price,
+                        total: total
+                    });
+                }
+            });
+
+            return {
+                userId,
+                invoiceNumber: document.getElementById('invoiceNumber').value || `INV-${Date.now()}`,
+                companyName: document.getElementById('companyName').value || 'PT. Solusi Digital Abadi',
+                companyAddress: document.getElementById('companyAddress').value || 'Alamat Perusahaan',
+                status: document.getElementById('statusSelector').value || 'Belum Lunas',
+                customerName: document.getElementById('customerName').value || 'Pelanggan Baru',
+                customerAddress: document.getElementById('customerAddress').value,
+                invoiceDate: document.getElementById('invoiceDate').value,
+                dueDate: document.getElementById('dueDate').value,
+                notes: document.getElementById('notes').value,
+                taxRate: parseFloat(document.getElementById('taxRate').value),
+                items: items,
+                subtotal: parseFloat(document.getElementById('saveButton').dataset.subtotal),
+                taxAmount: parseFloat(document.getElementById('saveButton').dataset.taxamount),
+                grandTotal: parseFloat(document.getElementById('saveButton').dataset.grandtotal),
+            };
+        }
+        
+        // --- LOGIKA BARU UNTUK MERENDER FAKTUR BERSIH (RAPI) ---
+
+        /**
+         * Merender data faktur ke dalam kontainer tersembunyi dengan layout bersih.
+         */
+        function renderCleanInvoice(data) {
+            const taxRateDisplay = data.taxRate ? `${data.taxRate}%` : '0%';
+            
+            // Generate item rows
+            const itemRowsHtml = data.items.map((item, index) => `
+                <tr class="h-10">
+                    <td class="text-center border-b border-l p-2 text-sm text-gray-700 w-[5%]">${index + 1}</td>
+                    <td class="border-b border-l p-2 text-sm text-gray-800 w-[45%]">${item.description}</td>
+                    <td class="text-center border-b border-l p-2 text-sm text-gray-700 w-[10%]">${item.quantity}</td>
+                    <td class="text-right border-b border-l p-2 text-sm text-gray-700 w-[20%]">${formatRupiah(item.price)}</td>
+                    <td class="text-right border-b border-r p-2 text-sm font-medium text-gray-800 w-[20%]">${formatRupiah(item.total)}</td>
+                </tr>
+            `).join('');
+
+            // Generate the clean HTML template
+            const htmlContent = `
+                <div class="flex justify-between border-b-4 border-blue-600 pb-4 mb-8">
+                    <!-- Kolom Kiri: Perusahaan -->
+                    <div> 
+                        <h1 class="text-3xl font-extrabold text-blue-700 mb-1">FAKTUR PENJUALAN</h1>
+                        <p class="font-bold text-xl text-gray-800">${data.companyName}</p>
+                        <p class="text-sm text-gray-600 whitespace-pre-line">${data.companyAddress}</p>
+                    </div>
+                    <!-- Kolom Kanan: Status & No Faktur -->
+                    <div class="text-right">
+                        <span class="inline-block px-4 py-1 text-sm font-bold uppercase rounded bg-blue-100 text-blue-800 border border-blue-300 mb-4">${data.status.toUpperCase()}</span>
+                        <p class="text-base text-gray-600">No. Faktur:</p>
+                        <p class="font-extrabold text-xl text-gray-900">${data.invoiceNumber}</p>
+                    </div>
+                </div>
+
+                <!-- Detail Pelanggan dan Tanggal Rapi -->
+                <div class="flex justify-between mb-8 text-sm">
+                    <!-- Ditagihkan Kepada -->
+                    <div class="w-1/2 pr-8">
+                        <h3 class="font-bold text-gray-700 border-b pb-1 mb-2">Ditagihkan Kepada:</h3>
+                        <p class="font-semibold text-base text-gray-800">${data.customerName}</p>
+                        <p class="text-gray-600 whitespace-pre-line">${data.customerAddress}</p>
+                    </div>
+                    <!-- Detail Tanggal -->
+                    <div class="w-1/2 flex flex-col space-y-1 items-end">
+                        <div class="flex justify-between w-64">
+                            <span class="text-gray-600">Tanggal Faktur:</span>
+                            <span class="font-medium text-gray-800">${data.invoiceDate}</span>
+                        </div>
+                        <div class="flex justify-between w-64">
+                            <span class="text-gray-600">Jatuh Tempo:</span>
+                            <span class="font-medium text-red-600">${data.dueDate || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabel Item Rapi -->
+                <table class="w-full clean-table border-collapse mb-8 border-t border-r border-b">
+                    <thead>
+                        <tr class="bg-blue-50 h-10 border-t border-b border-l">
+                            <th class="text-center text-xs font-bold text-gray-600 uppercase w-[5%] border-r border-l">No</th>
+                            <th class="text-left text-xs font-bold text-gray-600 uppercase w-[45%] border-r">Deskripsi Barang/Jasa</th>
+                            <th class="text-center text-xs font-bold text-gray-600 uppercase w-[10%] border-r">Qty</th>
+                            <th class="text-right text-xs font-bold text-gray-600 uppercase w-[20%] border-r">Harga Satuan</th>
+                            <th class="text-right text-xs font-bold text-gray-600 uppercase w-[20%] border-r">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemRowsHtml}
+                    </tbody>
+                </table>
+                
+                <!-- Total dan Keterangan Rapi -->
+                <div class="flex justify-between">
+                    
+                    <!-- Keterangan -->
+                    <div class="w-1/2 pr-8">
+                        <h3 class="font-bold text-gray-700 mb-2 border-b pb-1">Catatan/Keterangan:</h3>
+                        <p class="text-sm text-gray-600 whitespace-pre-line">${data.notes || '-'}</p>
+                        <p class="mt-8 text-sm text-gray-700">Hormat Kami,</p>
+                        <div class="mt-12 border-t-2 border-gray-400 w-48 pt-1 text-center font-bold">
+                            ( ${data.companyName} )
+                        </div>
+                    </div>
+                    
+                    <!-- Summary Total -->
+                    <div class="w-1/2 flex flex-col items-end">
+                        <div class="w-64 space-y-1 text-sm">
+                            <div class="flex justify-between text-gray-600">
+                                <span>Subtotal:</span>
+                                <span class="font-medium">${formatRupiah(data.subtotal)}</span>
+                            </div>
+                            <div class="flex justify-between text-gray-600">
+                                <span>Pajak (${taxRateDisplay}):</span>
+                                <span class="font-medium">${formatRupiah(data.taxAmount)}</span>
+                            </div>
+                            <div class="flex justify-between pt-3 border-t-2 border-gray-400">
+                                <span class="text-lg font-bold text-gray-800">TOTAL KESELURUHAN:</span>
+                                <span class="text-lg font-bold text-blue-700">${formatRupiah(data.grandTotal)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('downloadContainer').innerHTML = htmlContent;
+        }
+
+
+        /**
+         * Mengunduh faktur sebagai PNG atau PDF.
+         * Sekarang menggunakan kontainer download yang telah dirapikan.
+         */
+        window.downloadInvoice = function(format) {
+            const invoiceData = getInvoiceDataFromForm();
+            if (invoiceData.items.length === 0) {
+                 displayMessage("Faktur harus memiliki setidaknya satu baris item yang terisi untuk diunduh.", 'error');
+                 return;
+            }
+
+            // 1. Merender ulang data ke kontainer bersih yang tersembunyi
+            renderCleanInvoice(invoiceData);
+
+            const downloadEl = document.getElementById('downloadContainer');
+            const invoiceNumber = invoiceData.invoiceNumber || 'FAKTUR';
+            const { jsPDF } = window.jspdf;
+
+            // Pastikan kontainer terlihat oleh html2canvas (meski di luar layar)
+            downloadEl.style.position = 'absolute';
+            downloadEl.style.left = '0';
+            
+            // 2. Tangkap Kontainer Bersih
+            html2canvas(downloadEl, { 
+                scale: 2, 
+                useCORS: true, 
+                allowTaint: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            }).then(canvas => {
+                
+                // 3. Kembalikan posisi kontainer ke tersembunyi
+                downloadEl.style.position = 'absolute';
+                downloadEl.style.left = '-9999px'; 
+                
+                // 4. Proses Download
+                if (format === 'png' || format === 'jpg') {
+                    const imageURL = canvas.toDataURL(`image/${format}`, 1.0);
+                    const a = document.createElement('a');
+                    a.href = imageURL;
+                    a.download = `${invoiceNumber}_RAPI.${format}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    displayMessage(`Faktur berhasil diunduh sebagai ${format.toUpperCase()} (Rapi).`, 'success');
+
+                } else if (format === 'pdf') {
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = 210; 
+                    const pageHeight = 297; 
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    let heightLeft = imgHeight;
+                    let position = 0;
+
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+
+                    if (heightLeft < pageHeight) {
+                        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+                    } else {
+                        while (heightLeft >= 0) {
+                            position = heightLeft - imgHeight;
+                            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                            heightLeft -= pageHeight;
+                            if (heightLeft > 0) {
+                                pdf.addPage();
+                            }
+                        }
+                    }
+                    
+                    pdf.save(`${invoiceNumber}_RAPI.pdf`);
+                    displayMessage(`Faktur berhasil diunduh sebagai PDF (Rapi).`, 'success');
+                }
+
+            }).catch(error => {
+                console.error('Error saat membuat gambar/PDF:', error);
+                // Pastikan kontainer dikembalikan posisinya jika terjadi error
+                downloadEl.style.position = 'absolute';
+                downloadEl.style.left = '-9999px'; 
+                displayMessage('Gagal mengunduh faktur. Cek konsol untuk detail.', 'error');
+            });
+        };
+        
+        // --- Firestore Operations (Sama seperti sebelumnya) ---
+        
+        function getInvoiceCollectionPath() {
+            return `artifacts/${appId}/users/${userId}/invoices`;
+        }
+        
+        window.saveInvoice = async function() {
+            if (!userId) {
+                displayMessage("Silakan tunggu otentikasi selesai.", 'error');
+                return;
+            }
+
+            const invoiceData = getInvoiceDataFromForm();
+            if (invoiceData.items.length === 0) {
+                 displayMessage("Faktur harus memiliki setidaknya satu baris item yang terisi.", 'error');
+                 return;
+            }
+
+            try {
+                const collectionRef = collection(db, getInvoiceCollectionPath());
+                let docRef;
+
+                if (currentInvoiceId && currentInvoiceId !== 'new') {
+                    docRef = doc(collectionRef, currentInvoiceId);
+                    await setDoc(docRef, {
+                        ...invoiceData,
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                    displayMessage(`Faktur ${invoiceData.invoiceNumber} berhasil diperbarui!`, 'success');
+                } else {
+                    docRef = doc(collectionRef); 
+                    await setDoc(docRef, {
+                        ...invoiceData,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    });
+                    currentInvoiceId = docRef.id;
+                    document.getElementById('invoiceSelector').value = currentInvoiceId;
+                    displayMessage(`Faktur ${invoiceData.invoiceNumber} berhasil disimpan!`, 'success');
+                }
+                
+                updateStatusBadge(invoiceData.status);
+
+            } catch (e) {
+                console.error("Error saving document: ", e);
+                displayMessage(`Gagal menyimpan faktur: ${e.message}`, 'error');
+            }
+        };
+
+        function loadInvoiceToForm(data) {
+            document.getElementById('invoiceNumber').value = data.invoiceNumber || '';
+            
+            // Data Perusahaan
+            document.getElementById('companyName').value = data.companyName || 'PT. Solusi Digital Abadi';
+            document.getElementById('companyAddress').value = data.companyAddress || 'Jl. Teknologi No. 123, Jakarta, Indonesia';
+            
+            // Status Faktur
+            const status = data.status || 'Belum Lunas';
+            updateStatusBadge(status);
+
+            document.getElementById('customerName').value = data.customerName || '';
+            document.getElementById('customerAddress').value = data.customerAddress || '';
+            document.getElementById('invoiceDate').value = data.invoiceDate || '';
+            document.getElementById('dueDate').value = data.dueDate || '';
+            document.getElementById('notes').value = data.notes || '';
+            document.getElementById('taxRate').value = data.taxRate || 0;
+
+            document.getElementById('invoiceItems').innerHTML = '';
+
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => addItem({
+                    description: item.description,
+                    quantity: parseFloat(item.quantity),
+                    price: parseFloat(item.price)
+                }));
+            } else {
+                addItem();
+            }
+
+            calculateTotals();
+            displayMessage(`Faktur ${data.invoiceNumber} berhasil dimuat.`, 'info');
+        }
+
+        window.newInvoice = function() {
+            currentInvoiceId = 'new';
+            document.getElementById('invoiceSelector').value = 'new';
+
+            // Bersihkan semua field
+            document.getElementById('invoiceNumber').value = 'INV-' + Math.floor(Math.random() * 10000);
+            
+            // Default Perusahaan dan Status
+            document.getElementById('companyName').value = 'PT. Solusi Digital Abadi';
+            document.getElementById('companyAddress').value = 'Jl. Teknologi No. 123, Jakarta, Indonesia';
+            updateStatusBadge('Belum Lunas');
+            
+            document.getElementById('customerName').value = '';
+            document.getElementById('customerAddress').value = '';
+            document.getElementById('invoiceDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('dueDate').value = '';
+            document.getElementById('notes').value = '';
+            document.getElementById('taxRate').value = '11';
+
+            document.getElementById('invoiceItems').innerHTML = '';
+            addItem({ description: 'Produk A', quantity: 1, price: 500000 });
+            addItem({ description: 'Layanan B', quantity: 2, price: 250000 });
+            
+            calculateTotals();
+            
+            displayMessage("Faktur baru telah dibuat.", 'info');
+        };
+
+        function setupInvoiceListener() {
+            const invoicesRef = collection(db, getInvoiceCollectionPath());
+            const q = query(invoicesRef, orderBy("updatedAt", "desc"));
+
+            onSnapshot(q, (snapshot) => {
+                savedInvoices = [];
+                snapshot.forEach((doc) => {
+                    savedInvoices.push({ id: doc.id, ...doc.data() });
+                });
+
+                const selector = document.getElementById('invoiceSelector');
+                const selectedIdBeforeRebuild = selector.value;
+                
+                // 1. Rebuild the options
+                selector.innerHTML = '<option value="new">-- Faktur Baru --</option>';
+
+                savedInvoices.forEach(invoice => {
+                    const option = document.createElement('option');
+                    option.value = invoice.id;
+                    option.textContent = `${invoice.invoiceNumber} (${invoice.customerName || 'Tanpa Nama'})`;
+                    selector.appendChild(option);
+                });
+
+                // 2. Tentukan ID mana yang akan dipilih: Prioritaskan ID global (yang baru disimpan)
+                let idToSelect = currentInvoiceId;
+
+                if (!idToSelect || idToSelect === 'new') {
+                    idToSelect = selectedIdBeforeRebuild;
+                }
+
+                // 3. Final Selection
+                if (idToSelect && idToSelect !== 'new' && savedInvoices.some(inv => inv.id === idToSelect)) {
+                    selector.value = idToSelect;
+                    currentInvoiceId = idToSelect;
+                } else {
+                    // Hanya panggil newInvoice() jika tidak ada faktur yang dapat dipertahankan.
+                    if (idToSelect === 'new' || !idToSelect) {
+                         newInvoice();
+                    }
+                }
+
+                lucide.createIcons();
+                
+            }, (error) => {
+                console.error("Error listening to invoices:", error);
+                displayMessage("Gagal memuat daftar faktur tersimpan. Cek izin akses.", 'error');
+            });
+
+            document.getElementById('invoiceSelector').addEventListener('change', (event) => {
+                const selectedId = event.target.value;
+                if (selectedId === 'new') {
+                    newInvoice();
+                } else {
+                    const selectedInvoice = savedInvoices.find(inv => inv.id === selectedId);
+                    if (selectedInvoice) {
+                        currentInvoiceId = selectedId;
+                        loadInvoiceToForm(selectedInvoice);
+                    } else {
+                        displayMessage("Faktur tidak ditemukan.", 'error');
+                    }
+                }
+            });
+        }
+        
+        // --- Initialization ---
+
+        window.onload = function() {
+            initializeFirebase();
+            document.getElementById('invoiceDate').value = new Date().toISOString().split('T')[0];
+            newInvoice(); 
+            lucide.createIcons();
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+
+    </script>
+</body>
+</html>
